@@ -4,13 +4,15 @@ import pandas as pd
 import queue
 import threading
 import quantstats as qs
+import statistics as st
 
 # 공격 자산군
 RISK_IDX = 0
 BOND_IDX = 1
 CANARY_IDX = 2
 
-risk_asset = ['SPY', 'IWM', 'QQQ', 'VGK', 'EWJ', 'VWO', 'VNQ', 'GSG', 'GLD', 'TLT', 'HYG', 'LQD']
+risk_asset = ['SPY', 'IWM', 'QQQ', 'VGK', 'EWJ', 'VWO', 'VNQ', 'GSG', 'GLD', 'TLT', 'HYG', 'LQD',
+              'BTC/USD', 'ETH/USD', 'XRP/USD', 'BCH/USD', 'EOS/USD', 'LTC/USD', 'XLM/USD']
 # 수비 자산군
 bond_asset = ['SHY', 'IEF', 'LQD']
 # 위험 탐지 자산군
@@ -39,6 +41,9 @@ class transaction:
         self._sell_price = sell_price
         self._return = sell_price - buy_price
         self._return_pct = self._return / self._buy_price
+
+    def __str__(self):
+        return '%s: buy(%s), sell(%s), pct(%f)' % (self._name, self._buy_date, self._sell_date, self._return_pct)
 
 
 def get_data(asset_idx):
@@ -117,13 +122,12 @@ def select(idx, canary_momentum):
 
         if bnd > 0 and vwo > 0:
             # 해당일에 리스크 자산중 큰 두개 구하기
-            result = assets_prices[RISK_IDX].loc[index].nlargest(2)
-            t = []
-            for r in range(2):
-                t.append(transaction(result.index[r], buy_date, sell_date,
-                         assets_prices[RISK_IDX].loc[buy_date][r],
-                         assets_prices[RISK_IDX].loc[sell_date][r]))
-            transactions.append(t)
+            result = assets_prices[RISK_IDX].loc[index].idxmax()
+            transactions.append([
+                transaction(result, buy_date, sell_date,
+                            assets_prices[RISK_IDX].loc[index][result],
+                            assets_prices[RISK_IDX].loc[sell_date][result],
+                            )])
         elif bnd > 0 or vwo > 0:
             result1 = assets_prices[RISK_IDX].loc[index].idxmax()
             result2 = assets_prices[BOND_IDX].loc[index].idxmax()
@@ -160,12 +164,11 @@ for idx, canary_momentum in assets_momentum[CANARY_IDX].iterrows():
 report = []
 
 for x in transactions:
-    pct = 0
     item = {}
-    if len(x) > 1:
-        pct = (x[0]._return_pct + x[1]._return_pct) / 2
-    else:
-        pct = x[0]._return_pct
+    v = 0
+    for i in x:
+        v = v + i._return_pct
+    pct = v / len(x)
     item['Date'] = pd.to_datetime(x[0]._sell_date)
     item['Earn'] = pct
     report.append(item)
@@ -175,7 +178,11 @@ out_df.set_index('Date', inplace=True)
 out_df.sort_index(axis=1, ascending=True)
 qs.reports.html(out_df['Earn'], 'SPY', output='.report.html')
 
+for x in transactions:
+    for y in x:
+        print('%s: buy(%s), sell(%s), pct(%f)' % (y._name, y._buy_date, y._sell_date, y._return_pct))
 
+#map(lambda x: print(x), transactions)
 
 # risk_price = pd.DataFrame.from_dict(t);
 # risk_price = risk_price.set_index('Date')
